@@ -1,6 +1,6 @@
 # KM-UNet
 KM-UNet is a deep learning model based on the KAN-Mamba hybrid network for cloud mask nowcasting.
-<img width="1940" height="1107" alt="model-第 15 页 drawio" src="https://github.com/user-attachments/assets/31267ce6-03b4-4202-8792-9596b0022ee1" />
+<img width="1940" height="1107" alt="model-第 15 页 drawio" src="https://github.com/user-attachments/assets/b38d6d2f-29c2-4217-b644-702c57ee8d88" />
 
 1. To obtain the Shanghai dataset, please visit [DiffCast](https://github.com/DeminYu98/DiffCast).
 
