@@ -10,7 +10,7 @@ conda create -n yourname python=3.8
 conda activate yourname
 pip install -r requirements.txt
 ```
-3. To train models, cd to the project's root directory and run
+3. To train KM-UNet model, cd to the project's root directory and run
 ```bash
 python train_shanghai.py
 ```
