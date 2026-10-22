@@ -720,7 +720,7 @@ def main():
     # ===========================================================
 
     # 学习率调度器（根据实际训练步数调整）
-    epochs = 150
+    epochs = 120
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=150, eta_min=1e-3)

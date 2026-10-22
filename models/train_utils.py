@@ -1,20 +1,30 @@
+# -*- coding: utf-8 -*-
 import os
-from config import config_root
+import sys
 
-from models.ADNMUNet import create_ADNMUNet
-from models.ConvLSTM import create_ConvLSTM
-from models.TrajGRU import create_TrajGRU
-from models.LPTQPN import LPTQPN
-from models.TransUnet import create_TransUnet
-from models.SmaAt_UNet import SmaAt_UNet
-from models.SwinUnet import config, SwinUnet
-# from models.MambaUnet import Mamba_UNet
-
-from models.loss import *
-
+import torch
+import torch.optim as optim
 import torch.optim.optimizer
 import torchvision
-import torch.optim as optim
+
+CSDP_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'CSDP-Net', 'CSDP-Net-main')
+if CSDP_ROOT not in sys.path:
+    sys.path.insert(0, CSDP_ROOT)
+
+from config import config_root
+from CSDPNet import CSDPNet
+from KM_UNetV3_LAPS import KM_UNetV3
+from models.ADNMUNet import create_ADNMUNet
+from models.ConvLSTM import create_ConvLSTM
+from models.LPTQPN import LPTQPN
+from models.Mamba_UNet import Mamba_UNet
+from models.SCECA_Net import SCECANet
+from models.SmaAt_UNet import SmaAt_UNet
+from models.SwinUnet import config, SwinUnet
+from models.TrajGRU import create_TrajGRU
+from models.TransUnet import create_TransUnet
+from models.utils import RainfallLoss as MambaRainfallLoss
+from models.loss import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,37 +34,8 @@ def create_models(model_name, input_frames, output_frames, frame_interval, datas
         thresholds = [0.1, 0.3, 0.5, 0.7, 0.8]
     elif dataset == 'Shanghai':
         thresholds = [20, 30, 35, 40]
-    if model_name == 'ADNMUnet':
-        model = create_ADNMUNet(input_frames, output_frames, frame_interval)
-        base_LR = 1e-3
-        eta_min = 5e-7
-
-        weight_decay = 1e-2
-        amsgrad = False
-        warmup_epoch = 3
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=base_LR,
-            betas=(0.9, 0.999),
-            eps=1e-9,
-            weight_decay=weight_decay,
-            amsgrad=amsgrad,
-        )
-        criterion = enRainfallLoss(omega_t=0.57, alpha=0.25, gamma=0.).to(device)
-        scheduler_warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_epoch)
-        scheduler_cos = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=eta_min)
-        lr_scheduler = optim.lr_scheduler.SequentialLR(optimizer, [scheduler_warmup, scheduler_cos], [warmup_epoch])
-        if frame_interval < 120 / input_frames:  # 根据InstanceNorm决定梯度裁剪强度
-            early_stop = 3
-        else:
-            early_stop = 5
-
-        if_early_stop = True
-        ex_lr_scheduler = True
-        norm_clip = True
-        save_epoch = True
-
-    elif model_name == "ConvLSTM":
+    
+    if model_name == "ConvLSTM":
         model = create_ConvLSTM(output_frames)
         base_LR = 1e-4
         optimizer = torch.optim.Adam(model.parameters(), lr=base_LR)
@@ -94,7 +75,6 @@ def create_models(model_name, input_frames, output_frames, frame_interval, datas
         model = create_TransUnet(output_frames)
         base_LR = 1e-2
         optimizer = optim.SGD(model.parameters(), lr=base_LR, momentum=0.9, weight_decay=0.0001)
-        # criterion=DiceLoss().to(device)
         criterion = RAINlOSS().to(device)
         early_stop = None
         if_early_stop = False
@@ -124,6 +104,60 @@ def create_models(model_name, input_frames, output_frames, frame_interval, datas
         if_early_stop = False
         ex_lr_scheduler = False
         lr_scheduler = None
+        norm_clip = False
+        save_epoch = False
+
+    elif model_name == 'KM-UNet':
+        model = KM_UNetV3(num_classes=output_frames)
+        base_LR = 1e-3
+        optimizer = torch.optim.AdamW(model.parameters(), lr=base_LR, weight_decay=0.05)
+        criterion = HybridLoss().to(device)
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200, eta_min=5e-4)
+        early_stop = None
+        if_early_stop = False
+        ex_lr_scheduler = True
+        norm_clip = False
+        save_epoch = False
+
+    elif model_name == 'CSDPNet':
+        model = CSDPNet(seqNum=output_frames, filter_size=5, img_size=256)
+        base_LR = 1e-4
+        optimizer = torch.optim.Adam(model.parameters(), lr=base_LR)
+        criterion = CSDPOrigLoss().to(device)
+        lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[15000, 30000], gamma=0.1)
+        early_stop = None
+        if_early_stop = False
+        ex_lr_scheduler = True
+        norm_clip = False
+        save_epoch = False
+
+    elif model_name == 'SCECA':
+        model = SCECANet(in_channels=input_frames, out_channels=output_frames)
+        base_LR = 1e-3
+        optimizer = torch.optim.AdamW(model.parameters(), lr=base_LR)
+        criterion = RAINlOSS().to(device)
+        lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[15000, 30000], gamma=0.1)
+        early_stop = None
+        if_early_stop = False
+        ex_lr_scheduler = True
+        norm_clip = False
+        save_epoch = False
+
+    elif model_name == 'MambaUnet':
+        model = Mamba_UNet(
+            predicted_frames=output_frames,
+            input_frames=input_frames,
+            c_list=[32, 64, 128, 256, 512, 1024],
+            split_att='fc',
+            bridge=True,
+        )
+        base_LR = 1e-3
+        optimizer = torch.optim.Adam(model.parameters(), lr=base_LR)
+        criterion = MambaRainfallLoss(0.57, 0.25, 0.5, 1).to(device)
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
+        early_stop = None
+        if_early_stop = False
+        ex_lr_scheduler = True
         norm_clip = False
         save_epoch = False
 

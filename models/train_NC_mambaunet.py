@@ -334,7 +334,7 @@ def main():
     test_loader = DataLoader(test_groups, 1, drop_last=True)
 
     # 学习率调度器（根据实际训练步数调整）
-    epochs = 40
+    epochs = 120
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=50, eta_min=1e-5,last_epoch = -1)
